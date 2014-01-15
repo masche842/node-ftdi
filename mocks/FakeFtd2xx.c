@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include "memory.h"
 #include "../lib/ftd2xx.h"
@@ -17,7 +18,7 @@ typedef struct {
     long vendorId;
     long productId;
     long locationId;
-    FILE * spyFileHandler;
+    char spyFilePath[255];
 } FakeDevice;
 
 static long usb_ids[2][2] =
@@ -52,7 +53,7 @@ static void FakeDevice_Create(void)
     fakeDevice.locationId = 4;
     strcpy(fakeDevice.serialNumber, serialNumber);
     strcpy(fakeDevice.description, description);
-    fakeDevice.spyFileHandler = fopen(filePath, "w+");
+    strcpy(fakeDevice.spyFilePath, filePath);
 
     printLog("Device %d created!\n", fakeDeviceCount);
 
@@ -60,10 +61,11 @@ static void FakeDevice_Create(void)
     fakeDeviceCount++;
 }
 
-static void writeToSpyFile(char * message)
+static void writeToSpyFile(int deviceIndex, char * message)
 {
-    fwrite(message, strlen(message), 1, fakeDeviceList[0].spyFileHandler);
-    fclose(fakeDeviceList[0].spyFileHandler);
+    FILE * handler = fopen(fakeDeviceList[deviceIndex].spyFilePath, "w+");
+    fwrite(message, strlen(message), 1, handler);
+    fclose(handler);
 }
 
 /*
@@ -81,7 +83,10 @@ static void printLog(char *fmt, ...)
 
 FT_STATUS FT_Open(int deviceNumber, FT_HANDLE *pHandle)
 {
-    printLog("Device %d requested to open\n", deviceNumber);
+    if (fakeDeviceCount < 1)
+        FakeDevice_Create();
+    writeToSpyFile(deviceNumber, "FT_Open");
+    *(long *)pHandle = deviceNumber;
     return FT_OK;
 }
 
@@ -98,6 +103,8 @@ FT_STATUS FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
             for(i=0; i<fakeDeviceCount; i++) {
                 if (strncmp((PCHAR)pArg1, fakeDeviceList[i].serialNumber, 16) == 0) {
                     printLog("Serial number matches.\n");
+                    writeToSpyFile(i, "FT_OpenEX");
+                    *(long *)pHandle = i;
                     return FT_OK;
                 }
             }
@@ -150,8 +157,8 @@ FT_STATUS FT_Read(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToRead, LPDW
 }
 
 FT_STATUS FT_Close(FT_HANDLE ftHandle) {
-    printLog("Close requested.\n");
-    writeToSpyFile("FT_Close\n");
+    printLog("Close requested for %d.\n", (long *)ftHandle);
+    writeToSpyFile((int)(long *)ftHandle, "FT_Close\n");
     return FT_OK;
 }
 
@@ -180,8 +187,11 @@ FT_STATUS FT_GetDeviceInfoList(FT_DEVICE_LIST_INFO_NODE *pDest, LPDWORD lpdwNumD
     *lpdwNumDevs = 0;
     int i;
     for(i=0; i < fakeDeviceCount; i++) {
+        if (vidPidFilter[0] == 123 && vidPidFilter[1] == 456 && i > 1)
+            break;
         long id = (fakeDeviceList[i].vendorId << 16) + fakeDeviceList[i].productId;
-        printLog("id: %16X\n", id);
+        FT_HANDLE ftHandle = malloc(sizeof(FT_HANDLE));
+
         FT_DEVICE_LIST_INFO_NODE device = {
             0, //ULONG Flags;
             0, //ULONG Type;
@@ -189,7 +199,7 @@ FT_STATUS FT_GetDeviceInfoList(FT_DEVICE_LIST_INFO_NODE *pDest, LPDWORD lpdwNumD
             fakeDeviceList[i].locationId, //DWORD LocId;
             "my serial", //char SerialNumber[16];
             "my description", //char Description[64];
-            0 //FT_HANDLE ftHandle;
+            ftHandle
         };
         pDest[i] = device;
         *lpdwNumDevs += 1;
