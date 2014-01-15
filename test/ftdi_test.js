@@ -12,7 +12,7 @@ ftdi = require('../index.js');
 * - productIds: 321, 654
 */
 
-describe.only("ftdi", function(){
+describe("ftdi", function(){
 
   describe(".find", function(){
 
@@ -91,6 +91,27 @@ describe.only("ftdi", function(){
           });
         });
       });
+    });
+    describe.only("incoming data", function(){
+
+      afterEach(function(){
+        device.close();
+      });
+
+      it("emits a 'data' event", function(done){
+        doneCalled = false;
+        device = new ftdi.FtdiDevice(0);
+        device.open({}, function(){
+          device.on('data', function(data){
+            expect(data.toString('utf8')).to.equal('Fake Message');
+            if(!doneCalled){done();doneCalled=true;}
+          });
+        });
+      });
+    });
+
+    describe("write", function(){
+
     });
   });
 

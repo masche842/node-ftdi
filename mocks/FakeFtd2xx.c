@@ -142,8 +142,11 @@ FT_STATUS FT_SetEventNotification(FT_HANDLE ftHandle, DWORD Mask, PVOID Param)
 
 FT_STATUS FT_GetQueueStatus(FT_HANDLE ftHandle, LPDWORD lpRxBytes)
 {
-    *lpRxBytes = strlen(fakeDeviceList[0].message) - fakeDeviceList[0].messageCounter;
-    printLog("Que Status requested.\n");
+    int deviceIndex = (int)(long *)ftHandle;
+    *lpRxBytes = strlen(fakeDeviceList[deviceIndex].message) - fakeDeviceList[deviceIndex].messageCounter;
+    //if (*lpRxBytes == 0)
+    //    fakeDeviceList[deviceIndex].messageCounter = 0;
+    printLog("Que Status requested for %d (position %d).\n",deviceIndex ,fakeDeviceList[deviceIndex].messageCounter);
     return FT_OK;
 }
 
