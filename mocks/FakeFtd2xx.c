@@ -6,34 +6,55 @@
 #define SPY_FILE_PATH "/tmp/ftd2xx.spy"
 #define NUM_OF_FAKE_DEVICES 2
 
+
+static void printLog(char *fmt, ...);
+
 typedef struct {
     char * message;
     int messageCounter;
     char serialNumber[16];
     char description[64];
+    long vendorId;
+    long productId;
+    long locationId;
     FILE * spyFileHandler;
 } FakeDevice;
 
-static FakeDevice fakeDeviceList[10];
+static long usb_ids[2][2] =
+    {
+        {123,456},
+        {321,654}
+    };
+
+static long vidPidFilter[2] = {0,0};
+
+static FakeDevice fakeDeviceList[NUM_OF_FAKE_DEVICES];
 static int fakeDeviceCount = 0;
 
 static void FakeDevice_Create(void)
 {
-    if (fakeDeviceCount > NUM_OF_FAKE_DEVICES)
+    if (fakeDeviceCount > NUM_OF_FAKE_DEVICES-1)
         return;
 
     char serialNumber[16];
+    char description[64];
     char filePath[255];
     FakeDevice fakeDevice;
 
     sprintf(serialNumber, "FTDX%02d", fakeDeviceCount);
+    sprintf(description, "Description for %02d.", fakeDeviceCount);
     sprintf(filePath, "%s_%02d", SPY_FILE_PATH, fakeDeviceCount);
 
     fakeDevice.message = "Fake Message";
     fakeDevice.messageCounter = 0;
+    fakeDevice.vendorId = usb_ids[fakeDeviceCount][0];
+    fakeDevice.productId = usb_ids[fakeDeviceCount][1];
+    fakeDevice.locationId = 4;
     strcpy(fakeDevice.serialNumber, serialNumber);
-    strcpy(fakeDevice.description, "The devices description");
+    strcpy(fakeDevice.description, description);
     fakeDevice.spyFileHandler = fopen(filePath, "w+");
+
+    printLog("Device %d created!\n", fakeDeviceCount);
 
     fakeDeviceList[fakeDeviceCount] = fakeDevice;
     fakeDeviceCount++;
@@ -141,44 +162,63 @@ FT_STATUS FT_Purge(FT_HANDLE ftHandle, DWORD dwMask) {
 
 FT_STATUS FT_CreateDeviceInfoList(LPDWORD lpdwNumDevs)
 {
+    *lpdwNumDevs = 0;
     int i;
-    for(i=1; i<NUM_OF_FAKE_DEVICES; i++)
+    for(i=1; i <= NUM_OF_FAKE_DEVICES; i++) {
+        // TODO: move check for vid/pid elsewhere
+        if (vidPidFilter[0] == 123 && vidPidFilter[1] == 456 && i > 1)
+            break;
         FakeDevice_Create();
-    printLog("Create DeviceInfoList requested.\n");
-    *lpdwNumDevs = fakeDeviceCount;
+        *lpdwNumDevs += 1;
+    }
+    printLog("Create DeviceInfoList requested, returning %d device(s).\n", *lpdwNumDevs);
     return FT_OK;
 }
 
 FT_STATUS FT_GetDeviceInfoList(FT_DEVICE_LIST_INFO_NODE *pDest, LPDWORD lpdwNumDevs)
 {
-    printLog("Create GetDeviceInfoList requested.\n");
-    *lpdwNumDevs = fakeDeviceCount;
+    *lpdwNumDevs = 0;
+    int i;
+    for(i=0; i < fakeDeviceCount; i++) {
+        long id = (fakeDeviceList[i].vendorId << 16) + fakeDeviceList[i].productId;
+        printLog("id: %16X\n", id);
+        FT_DEVICE_LIST_INFO_NODE device = {
+            0, //ULONG Flags;
+            0, //ULONG Type;
+            id, //ULONG ID;
+            fakeDeviceList[i].locationId, //DWORD LocId;
+            "my serial", //char SerialNumber[16];
+            "my description", //char Description[64];
+            0 //FT_HANDLE ftHandle;
+        };
+        pDest[i] = device;
+        *lpdwNumDevs += 1;
+    }
+    printLog("Create GetDeviceInfoList requested, returning %d node(s)\n", *lpdwNumDevs);
     return FT_OK;
 }
 
 FT_STATUS FT_ListDevices(PVOID pArg1, PVOID pArg2, DWORD flags)
 {
-    printLog("Device List requested with %08X (%08X)\n", flags, FT_LIST_BY_INDEX);
+    printLog("Device List requested with %08X\n", flags);
     if(flags & FT_LIST_NUMBER_ONLY) {
         printLog("(only number).\n");
     }
     if(flags & FT_LIST_BY_INDEX) {
-        printLog("(list by index)\n");
+        printLog(" - list by index\n");
 
         DWORD deviceIndex = (DWORD)pArg1;
         if(flags & FT_OPEN_BY_SERIAL_NUMBER) {
-            printLog("here we go!\n");
-            //DWORD deviceIndex = *devIndexPointer;
-            printLog("(get serial number for %d)\n", deviceIndex);
-            strcpy(pArg2, fakeDeviceList[deviceIndex].serialNumber);
+            printLog(" - get serial number for %d, returning %s\n", deviceIndex, fakeDeviceList[deviceIndex].serialNumber);
+            strncpy((char *)pArg2, fakeDeviceList[deviceIndex].serialNumber, strlen(pArg2));
         }
         if(flags & FT_OPEN_BY_DESCRIPTION) {
-            printLog("(get description for %d)\n", deviceIndex);
+            printLog(" - get description for %d, returning %s\n", deviceIndex, fakeDeviceList[deviceIndex].description);
             strcpy(pArg2, fakeDeviceList[deviceIndex].description);
         }
         if(flags & FT_OPEN_BY_LOCATION) {
-            printLog("(get location for %d)\n", deviceIndex);
-            strcpy(pArg2, "Not implemented on Mac");
+            printLog(" - get location for %d, Not implemented on Mac, returning 0\n", deviceIndex);
+            *(DWORD *)pArg2 = 0;
         }
 
     } else if(flags & FT_LIST_ALL)
@@ -196,14 +236,16 @@ FT_STATUS FT_GetDeviceInfoDetail(DWORD dwIndex, LPDWORD lpdwFlags,
     lpdwType = 0;
     lpdwID = 0;
     lpdwLocId = 0;
-    strcpy(lpSerialNumber,"DC0089EX");
-    strcpy(lpDescription, "I2C Converter");
+    strcpy(lpSerialNumber,"8888");
+    strcpy(lpDescription, "8888");
     pftHandle = 0;
     return FT_OK;
 }
 
 FT_STATUS FT_SetVIDPID(DWORD dwVID, DWORD dwPID)
 {
+    vidPidFilter[0] = dwVID;
+    vidPidFilter[1] = dwPID;
     printLog("VIDPID set to vid: %d pid: %d\n", dwVID, dwPID);
     return FT_OK;
 }
