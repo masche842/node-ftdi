@@ -136,6 +136,9 @@ FT_STATUS FT_SetBaudRate(FT_HANDLE ftHandle,ULONG BaudRate)
 
 FT_STATUS FT_SetEventNotification(FT_HANDLE ftHandle, DWORD Mask, PVOID Param)
 {
+    // Reset counter so the whole test suite can pass.
+    // (SetEventNotification is called when subscribed to a 'data'-event)
+    fakeDeviceList[(int)(long *)ftHandle].messageCounter = 0;
     printLog("Event notification set.\n");
     return FT_OK;
 }
@@ -156,6 +159,16 @@ FT_STATUS FT_Read(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToRead, LPDW
     memcpy(lpBuffer, fakeDeviceList[0].message + fakeDeviceList[0].messageCounter, dwBytesToRead);
     *lpBytesReturned = dwBytesToRead;
     fakeDeviceList[0].messageCounter += dwBytesToRead;
+    return FT_OK;
+}
+
+FT_STATUS FT_Write(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToWrite, LPDWORD lpBytesWritten)
+{
+    printLog("Received write request: %s %d\n",(char *)lpBuffer,dwBytesToWrite);
+    char * outputFmt = "FT_Write(\"%s\")\n";
+    char output[strlen(outputFmt)+dwBytesToWrite];
+    sprintf(output, outputFmt, lpBuffer);
+    writeToSpyFile((int)(long *)ftHandle, output);
     return FT_OK;
 }
 

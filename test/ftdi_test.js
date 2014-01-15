@@ -92,7 +92,7 @@ describe("ftdi", function(){
         });
       });
     });
-    describe.only("incoming data", function(){
+    describe("incoming data", function(){
 
       afterEach(function(){
         device.close();
@@ -111,6 +111,20 @@ describe("ftdi", function(){
     });
 
     describe("write", function(){
+
+      afterEach(function(){
+        device.close();
+      });
+
+      it("should call FT_Write with the correct data", function(done){
+        device = new ftdi.FtdiDevice(0);
+        device.open({}, function(){
+          device.write('this should have been written', function(){
+            expect(readSpyFile("00")).to.contain('FT_Write("this should have been written")');
+            done();
+          });
+        });
+      });
 
     });
   });
