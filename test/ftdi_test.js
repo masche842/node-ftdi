@@ -54,7 +54,12 @@ describe("ftdi", function(){
     var device;
 
     afterEach(function(){
-      deleteSpyfile("00");
+      try {
+        deleteSpyfile("00");
+      }
+      catch(err) {
+        //fail silently if the spyfile does not exist
+      }
     });
 
     describe("open", function(){
@@ -91,6 +96,17 @@ describe("ftdi", function(){
           });
         });
       });
+      it("can handle invalid device indices", function(done){
+        // a serialNumber without match in the connected devices
+        // will trigger FT_Close
+        device = new ftdi.FtdiDevice({serialNumber: "null"});
+        device.open({}, function(err, success){
+          expect(err).to.equal('FT_DEVICE_NOT_FOUND');
+          done();
+        });
+
+      });
+
     });
     describe("incoming data", function(){
 

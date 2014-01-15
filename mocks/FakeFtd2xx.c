@@ -108,6 +108,7 @@ FT_STATUS FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
                     return FT_OK;
                 }
             }
+            *(long *)pHandle = 99;
             return FT_DEVICE_NOT_FOUND;
             break;
         case FT_OPEN_BY_DESCRIPTION:
@@ -174,8 +175,12 @@ FT_STATUS FT_Write(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToWrite, LP
 
 FT_STATUS FT_Close(FT_HANDLE ftHandle) {
     printLog("Close requested for %d.\n", (long *)ftHandle);
-    writeToSpyFile((int)(long *)ftHandle, "FT_Close\n");
-    return FT_OK;
+    if((int)(long *)ftHandle > fakeDeviceCount-1) {
+        return FT_INVALID_HANDLE;
+    } else {
+        writeToSpyFile((int)(long *)ftHandle, "FT_Close\n");
+        return FT_OK;
+    }
 }
 
 FT_STATUS FT_Purge(FT_HANDLE ftHandle, DWORD dwMask) {
