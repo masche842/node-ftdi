@@ -55,6 +55,20 @@ kernel & user mode
 #define FTD2XX_API __declspec(dllimport)
 #endif
 
+#ifndef _WINDOWS
+#include <pthread.h>
+#include "WinTypes.h"
+/** Substitute for HANDLE returned by Windows CreateEvent API */
+typedef struct _EVENT_HANDLE{
+	pthread_cond_t eCondVar;
+	pthread_mutex_t eMutex;
+	int iVar;
+} EVENT_HANDLE;
+#ifdef FTD2XX_API
+#undef FTD2XX_API
+#define FTD2XX_API
+#endif /* FTD2XX_API */
+#endif /* _WINDOWS */
 
 typedef PVOID	FT_HANDLE;
 typedef ULONG	FT_STATUS;
@@ -96,6 +110,10 @@ enum {
 #define FT_OPEN_BY_SERIAL_NUMBER	1
 #define FT_OPEN_BY_DESCRIPTION		2
 #define FT_OPEN_BY_LOCATION			4
+
+#define FT_OPEN_MASK (FT_OPEN_BY_SERIAL_NUMBER | \
+                      FT_OPEN_BY_DESCRIPTION | \
+                      FT_OPEN_BY_LOCATION)
 
 //
 // FT_ListDevices Flags (used in conjunction with FT_OpenEx Flags
@@ -985,6 +1003,29 @@ extern "C" {
 		ULONG ulDeadmanTimeout
 		);
 
+#ifndef _WINDOWS
+	/* Linux etc. offer extra functions to compensate for lack of .INF file
+	 * to specify VID+PID combinations.
+	 */
+	FTD2XX_API
+		FT_STATUS FT_SetVIDPID(
+		DWORD dwVID, 
+		DWORD dwPID
+		);
+			
+	FTD2XX_API
+		FT_STATUS FT_GetVIDPID(
+		DWORD * pdwVID, 
+		DWORD * pdwPID
+		);
+
+	FTD2XX_API
+		FT_STATUS WINAPI FT_GetDeviceLocId(
+		FT_HANDLE ftHandle,
+		LPDWORD lpdwLocId
+		);
+#endif /* _WINDOWS */		
+		
 	FTD2XX_API
 		FT_STATUS WINAPI FT_GetDeviceInfo(
 		FT_HANDLE ftHandle,

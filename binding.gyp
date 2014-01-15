@@ -2,38 +2,38 @@
   'targets': [
     {
       'target_name': 'ftdi',
-      'sources': 
+      'sources':
       [
         'src/ftdi_device.cc',
 	      'src/ftdi_driver.cc'
       ],
-      'include_dirs+': 
+      'include_dirs+':
       [
         'src/',
       ],
-      'conditions': 
+      'conditions':
       [
         ['OS == "win"',
           {
-            'include_dirs+': 
+            'include_dirs+':
             [
               'lib/'
             ],
-            'link_settings': 
+            'link_settings':
             {
-              "conditions" : 
+              "conditions" :
               [
-                ["target_arch=='ia32'", 
+                ["target_arch=='ia32'",
                 {
-                  'libraries': 
+                  'libraries':
                   [
-                   '-l<(module_root_dir)/lib/i386/ftd2xx.lib'
+                   '-llib/i386/ftd2xx.lib'
                   ]
                 }
               ],
               ["target_arch=='x64'", {
                 'libraries': [
-                   '-l<(module_root_dir)/lib/amd64/ftd2xx.lib'
+                   '-llib/amd64/ftd2xx.lib'
                 ]
               }]
             ]
@@ -45,16 +45,22 @@
               '/usr/local/include/libftd2xx/'
             ],
             'ldflags': [
-              '-Wl,-Map=output.map',
+              '-Wl,-Map=output.map'
             ],
             'link_settings': {
               'libraries': [
-                '-lftd2xx'
+                './Release/fake_libftd2xx.a'
               ]
             }
           }
         ]
-      ],          
-    }
+      ],
+    },
+     {
+        'target_name': 'fake_libftd2xx',
+        'type': 'static_library',
+        'sources': [ 'mocks/FakeFtd2xx.c' ],
+        'include_dirs+': [ 'lib' ]
+      },
   ]
 }
