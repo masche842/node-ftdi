@@ -9,9 +9,10 @@
 
 
 static void printLog(char *fmt, ...);
+static void escapeEscapeSequences(char *string, char *result);
 
 typedef struct {
-    char * message;
+    char message[65536];
     int messageCounter;
     char serialNumber[16];
     char description[64];
@@ -46,11 +47,11 @@ static void FakeDevice_Create(void)
     sprintf(description, "Description for %02d.", fakeDeviceCount);
     sprintf(filePath, "%s_%02d", SPY_FILE_PATH, fakeDeviceCount);
 
-    fakeDevice.message = "Fake Message";
     fakeDevice.messageCounter = 0;
     fakeDevice.vendorId = usb_ids[fakeDeviceCount][0];
     fakeDevice.productId = usb_ids[fakeDeviceCount][1];
     fakeDevice.locationId = 4;
+    strcpy(fakeDevice.message, "");
     strcpy(fakeDevice.serialNumber, serialNumber);
     strcpy(fakeDevice.description, description);
     strcpy(fakeDevice.spyFilePath, filePath);
@@ -80,12 +81,26 @@ static void printLog(char *fmt, ...)
     va_end(ap); /* clean up when done */
 }
 
+static void scheduleResponse(char * buffer, int deviceIndex)
+{
+
+    char *lut[1][2] = {
+        { "\t\r", "\32\32\32\n\r." }
+    };
+
+    int i;
+    for(i=0; i<1; i++) {
+        if (strcmp(lut[i][0], buffer) == 0)
+            printLog("WE HAVE A MATCH HERE %d,\n", strlen(lut[i][1]));
+            strncpy(fakeDeviceList[deviceIndex].message, lut[i][1], strlen(lut[i][1]));
+    }
+}
 
 FT_STATUS FT_Open(int deviceNumber, FT_HANDLE *pHandle)
 {
     if (fakeDeviceCount < 1)
         FakeDevice_Create();
-    writeToSpyFile(deviceNumber, "FT_Open");
+    writeToSpyFile(deviceNumber, "FT_Open\n");
     *(long *)pHandle = deviceNumber;
     return FT_OK;
 }
@@ -103,7 +118,7 @@ FT_STATUS FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
             for(i=0; i<fakeDeviceCount; i++) {
                 if (strncmp((PCHAR)pArg1, fakeDeviceList[i].serialNumber, 16) == 0) {
                     printLog("Serial number matches.\n");
-                    writeToSpyFile(i, "FT_OpenEX");
+                    writeToSpyFile(i, "FT_OpenEX\n");
                     *(long *)pHandle = i;
                     return FT_OK;
                 }
@@ -165,11 +180,25 @@ FT_STATUS FT_Read(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToRead, LPDW
 
 FT_STATUS FT_Write(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToWrite, LPDWORD lpBytesWritten)
 {
-    printLog("Received write request: %s %d\n",(char *)lpBuffer,dwBytesToWrite);
     char * outputFmt = "FT_Write(\"%s\")\n";
-    char output[strlen(outputFmt)+dwBytesToWrite];
-    sprintf(output, outputFmt, lpBuffer);
+
+    char trimmedBuffer[dwBytesToWrite+1];
+    strncpy(trimmedBuffer, (char *)lpBuffer, dwBytesToWrite);
+    trimmedBuffer[dwBytesToWrite] = '\0';
+
+    char escapedBuffer[dwBytesToWrite*2];
+    escapeEscapeSequences(trimmedBuffer, escapedBuffer);
+
+    printLog("length of string: %d\n", strlen(escapedBuffer));
+
+    char output[strlen(outputFmt)+strlen(escapedBuffer)];
+    sprintf(output, outputFmt, escapedBuffer);
+
+    printLog("Received write request: %s %d\n", escapedBuffer, dwBytesToWrite);
     writeToSpyFile((int)(long *)ftHandle, output);
+    scheduleResponse(escapedBuffer, (int)(long *)ftHandle);
+    *lpBytesWritten = dwBytesToWrite;
+
     return FT_OK;
 }
 
@@ -279,4 +308,32 @@ FT_STATUS FT_SetVIDPID(DWORD dwVID, DWORD dwPID)
     vidPidFilter[1] = dwPID;
     printLog("VIDPID set to vid: %d pid: %d\n", dwVID, dwPID);
     return FT_OK;
+}
+
+
+// Helper functions
+
+void escapeEscapeSequences(char *string, char *result)
+{
+    char * p;
+    for (p = string; *p; p++) {
+        switch(*p) {
+            case '\n':
+                *result++ = '\\';
+                *result = 'n';
+                break;
+            case '\r':
+                *result++ = '\\';
+                *result = 'r';
+                break;
+            case '\t':
+                *result++ = '\\';
+                *result = 't';
+                break;
+            default:
+                *result = *p;
+        }
+        result++;
+    }
+    *result = '\0';
 }
