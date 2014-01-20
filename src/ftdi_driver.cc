@@ -69,14 +69,15 @@ void FindAllAsync(uv_work_t* req)
     // Lock Readout
     uv_mutex_lock(&vidPidMutex);
 
-//why only win32? Seems to work on Mac OS too.
+// why only win32? Seems to work on Mac OS too.
+// should always be set for multiple searches
 //#ifndef WIN32
-    if(listBaton->vid != 0 && listBaton->pid != 0)
-    {
-        uv_mutex_lock(&libraryMutex);  
+    //if(listBaton->vid != 0 && listBaton->pid != 0)
+    //{
+        uv_mutex_lock(&libraryMutex);
         ftStatus = FT_SetVIDPID(listBaton->vid, listBaton->pid);
-        uv_mutex_unlock(&libraryMutex);  
-    }
+        uv_mutex_unlock(&libraryMutex);
+    //}
 //#endif
     // create the device information list
     uv_mutex_lock(&libraryMutex);  

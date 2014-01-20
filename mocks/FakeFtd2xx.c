@@ -64,7 +64,7 @@ static void FakeDevice_Create(void)
 
 static void writeToSpyFile(int deviceIndex, char * message)
 {
-    FILE * handler = fopen(fakeDeviceList[deviceIndex].spyFilePath, "w+");
+    FILE * handler = fopen(fakeDeviceList[deviceIndex].spyFilePath, "a");
     fwrite(message, strlen(message), 1, handler);
     fclose(handler);
 }
