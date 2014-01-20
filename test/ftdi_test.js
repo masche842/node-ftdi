@@ -7,7 +7,7 @@ ftdi = require('../index.js');
 * FakeFtd2xx is configured to:
 * - return 2 devices
 * - devices have serialNumber FTDX00 and FTDX01
-* - devices have description 'Description for 00.' and 'Description for 01.'
+* - devices have description 'Description for fake device 0.' and 'Description for fake device 1.'
 * - vendorIds: 123, 456
 * - productIds: 321, 654
 */
@@ -32,7 +32,7 @@ describe("ftdi", function(){
 
     it("reads the description", function(done){
       ftdi.find(function(err, devices){
-        expect(devices[0].description).to.equal("Description for 00.");
+        expect(devices[0].description).to.equal("Description for fake device 0.");
         done();
       });
     });
@@ -55,7 +55,7 @@ describe("ftdi", function(){
 
     afterEach(function(){
       try {
-        deleteSpyfile("00");
+        deleteSpyfile(0);
       }
       catch(err) {
         //fail silently if the spyfile does not exist
@@ -71,7 +71,7 @@ describe("ftdi", function(){
       it("can open a device by index", function(done){
         device = new ftdi.FtdiDevice(0);
         device.open({baudrate: 125000}, function(x,y){
-          expect(readSpyFile("00")).to.contain("FT_Open");
+          expect(readSpyFile(0)).to.contain("FT_Open");
           done();
         });
       });
@@ -79,7 +79,7 @@ describe("ftdi", function(){
       it("can open a device by serialNumber", function(done){
         device = new ftdi.FtdiDevice({serialNumber: "FTDX00"});
         device.open({baudrate: 125000}, function(x,y){
-          expect(readSpyFile("00")).to.contain("FT_Open");
+          expect(readSpyFile(0)).to.contain("FT_Open");
           done();
         });
       });
@@ -91,7 +91,7 @@ describe("ftdi", function(){
         device = new ftdi.FtdiDevice(0);
         device.open({}, function(){
           device.close(function(){
-            expect(readSpyFile("00")).to.contain("FT_Close");
+            expect(readSpyFile(0)).to.contain("FT_Close");
             done();
           });
         });
@@ -136,7 +136,7 @@ describe("ftdi", function(){
         device = new ftdi.FtdiDevice(0);
         device.open({}, function(){
           device.write('this should have been written', function(){
-            expect(readSpyFile("00")).to.contain('FT_Write("this should have been written")');
+            expect(readSpyFile(0)).to.contain('FT_Write("this should have been written")');
             done();
           });
         });
@@ -148,8 +148,9 @@ describe("ftdi", function(){
 });
 
 readSpyFile = function(deviceIndex){
-  return fs.readFileSync('/tmp/ftd2xx.spy_'+deviceIndex, 'utf8');
+  result = fs.readFileSync('/tmp/node-ftdi_spy'+deviceIndex+'.log', 'utf8');
+  return result;
 };
 deleteSpyfile = function(deviceIndex){
-  return fs.unlinkSync('/tmp/ftd2xx.spy_'+deviceIndex);
+  return fs.unlinkSync('/tmp/node-ftdi_spy'+deviceIndex+'.log');
 };

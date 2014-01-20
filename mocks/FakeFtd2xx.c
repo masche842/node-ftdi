@@ -2,77 +2,147 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "memory.h"
+#include "../lib/jansson.h"
 #include "../lib/ftd2xx.h"
+#include "FakeFtd2xx.h"
 
 #define SPY_FILE_PATH "/tmp/ftd2xx.spy"
-#define NUM_OF_FAKE_DEVICES 2
-
-
-static void printLog(char *fmt, ...);
-static void escapeEscapeSequences(char *string, char *result);
-
-typedef struct {
-    char message[65536];
-    int messageCounter;
-    char serialNumber[16];
-    char description[64];
-    long vendorId;
-    long productId;
-    long locationId;
-    char spyFilePath[255];
-} FakeDevice;
+#define NUM_OF_FAKE_DEVICES 4
+#define DEFAULT_CONFIG_PATH "tests/support/fake_devices.json"
 
 static long usb_ids[2][2] =
     {
-        {123,456},
-        {321,654}
+        {0x0403,0x6015},
+        {0x0403,0x6015}
     };
 
 static long vidPidFilter[2] = {0,0};
 
 static FakeDevice fakeDeviceList[NUM_OF_FAKE_DEVICES];
+static int fakeDeviceListCount = 0;
 static int fakeDeviceCount = 0;
+char FakeFtd2xx_configFilePath[255];
 
-static void FakeDevice_Create(void)
+int FakeFtd2xx_parseConfigFile(char * text, FakeDevice * fakeDevices, int maxDevices)
 {
-    if (fakeDeviceCount > NUM_OF_FAKE_DEVICES-1)
-        return;
+    int i;
+    json_t *root;
+    json_error_t error;
+    root = json_loads(text, 0, &error);
 
-    char serialNumber[16];
-    char description[64];
-    char filePath[255];
-    FakeDevice fakeDevice;
+    if(!json_is_array(root))
+    {
+        fprintf(stderr, "error: root is not an array\n");
+        json_decref(root);
+        return 1;
+    }
+    for(i = 0; i < json_array_size(root) && i < maxDevices; i++)
+    {
+        json_t *data, *serialNumber, *description, *vendorId,
+               *productId, *locationId, *spyFilePath;
 
-    sprintf(serialNumber, "FTDX%02d", fakeDeviceCount);
-    sprintf(description, "Description for %02d.", fakeDeviceCount);
-    sprintf(filePath, "%s_%02d", SPY_FILE_PATH, fakeDeviceCount);
+        data = json_array_get(root, i);
+        if(!json_is_object(data))
+        {
+            fprintf(stderr, "error: data for device %d is not an object\n", i + 1);
+            json_decref(root);
+            return 1;
+        }
+        serialNumber = json_object_get(data, "serialNumber");
+        if(!json_is_string(serialNumber)) {
+            fprintf(stderr, "error: can not read serialNumber from %d\n", i + 1);
+            return 1;
+        }
+        description = json_object_get(data, "description");
+        if(!json_is_string(description)) {
+            fprintf(stderr, "error: can not read description from %d\n", i + 1);
+            return 1;
+        }
+        vendorId = json_object_get(data, "vendorId");
+        if(!json_is_number(vendorId)) {
+            fprintf(stderr, "error: can not read vendorId from %d\n", i + 1);
+            return 1;
+        }
+        productId = json_object_get(data, "productId");
+        if(!json_is_number(productId)) {
+            fprintf(stderr, "error: can not read productId from %d\n", i + 1);
+            return 1;
+        }
+        locationId = json_object_get(data, "locationId");
+        if(!json_is_number(locationId)) {
+            fprintf(stderr, "error: can not read locationId from %d\n", i + 1);
+            return 1;
+        }
+        spyFilePath = json_object_get(data, "spyFilePath");
+        if(!json_is_string(spyFilePath)) {
+            fprintf(stderr, "error: can not read spyFilePath from %d\n", i + 1);
+            return 1;
+        }
+        strcpy(fakeDevices[i].serialNumber, json_string_value(serialNumber));
+        strcpy(fakeDevices[i].description, json_string_value(description));
 
-    fakeDevice.messageCounter = 0;
-    fakeDevice.vendorId = usb_ids[fakeDeviceCount][0];
-    fakeDevice.productId = usb_ids[fakeDeviceCount][1];
-    fakeDevice.locationId = 4;
-    strcpy(fakeDevice.message, "");
-    strcpy(fakeDevice.serialNumber, serialNumber);
-    strcpy(fakeDevice.description, description);
-    strcpy(fakeDevice.spyFilePath, filePath);
+        fakeDevices[i].vendorId = json_number_value(vendorId);
+        fakeDevices[i].productId = json_number_value(productId);
+        fakeDevices[i].locationId = json_number_value(locationId);
 
-    printLog("Device %d created!\n", fakeDeviceCount);
+        strcpy(fakeDevices[i].spyFilePath, json_string_value(spyFilePath));
+    }
+    return 0;
+}
 
-    fakeDeviceList[fakeDeviceCount] = fakeDevice;
-    fakeDeviceCount++;
+int FakeFtd2xx_readConfigFile(char * result)
+{
+    FILE *fp;
+    int fileSize;
+
+    if(strlen(FakeFtd2xx_configFilePath) <= 0)
+        FakeFtd2xx_setConfigFilePath(DEFAULT_CONFIG_PATH);
+    fp = fopen(FakeFtd2xx_configFilePath, "r+");
+    if(!fp)
+        return 1;
+    // obtain file size:
+    fseek(fp , 0 , SEEK_END);
+    fileSize = ftell(fp);
+    rewind(fp);
+    fread(result, 1, fileSize, fp);
+    fclose(fp);
+    result[fileSize] = '\0';
+    return 0;
+}
+
+int FakeFtd2xx_createDevices(FakeDevice * devices, int numberOfDevices)
+{
+    int status = 0;
+    char rawJson[24000];
+
+    status |= FakeFtd2xx_readConfigFile(rawJson);
+    status |= FakeFtd2xx_parseConfigFile(rawJson, devices, numberOfDevices);
+
+    return status;
+}
+
+void FakeFtd2xx_setConfigFilePath(const char * path)
+{
+    strncpy(FakeFtd2xx_configFilePath, path, 255);
+}
+
+void FakeFtd2xx_destroy()
+{
+    free(fakeDeviceList);
 }
 
 static void writeToSpyFile(int deviceIndex, char * message)
 {
     FILE * handler = fopen(fakeDeviceList[deviceIndex].spyFilePath, "a");
-    fwrite(message, strlen(message), 1, handler);
+    if(handler)
+        fwrite(message, strlen(message), 1, handler);
     fclose(handler);
 }
 
 /*
 * To be used like printf, but prefixes the output
 */
-static void printLog(char *fmt, ...)
+void printLog(char *fmt, ...)
 {
     va_list ap; /* points to each unnamed arg in turn */
     va_start(ap, fmt);
@@ -98,8 +168,8 @@ static void scheduleResponse(char * buffer, int deviceIndex)
 
 FT_STATUS FT_Open(int deviceNumber, FT_HANDLE *pHandle)
 {
-    if (fakeDeviceCount < 1)
-        FakeDevice_Create();
+    if (fakeDeviceListCount < 1)
+        FakeFtd2xx_createDevices(fakeDeviceList, NUM_OF_FAKE_DEVICES);
     writeToSpyFile(deviceNumber, "FT_Open\n");
     *(long *)pHandle = deviceNumber;
     return FT_OK;
@@ -107,18 +177,19 @@ FT_STATUS FT_Open(int deviceNumber, FT_HANDLE *pHandle)
 
 FT_STATUS FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
 {
-    if (fakeDeviceCount < 1)
-        FakeDevice_Create();
+    if (fakeDeviceListCount < 1) {
+        FakeFtd2xx_createDevices(fakeDeviceList, NUM_OF_FAKE_DEVICES);
+    }
     printLog("Device requested to openEx\n");
     printLog("Flag: %d\n", Flags);
     switch(Flags) {
         case FT_OPEN_BY_SERIAL_NUMBER:
-            printLog("opened by serial number %s (%d devices faked)\n", (PCHAR)pArg1, fakeDeviceCount);
+            printLog("trying to open by serial number %s (%d devices faked)\n", (PCHAR)pArg1, fakeDeviceListCount);
             int i;
-            for(i=0; i<fakeDeviceCount; i++) {
+            for(i=0; i<fakeDeviceListCount; i++) {
                 if (strncmp((PCHAR)pArg1, fakeDeviceList[i].serialNumber, 16) == 0) {
                     printLog("Serial number matches.\n");
-                    writeToSpyFile(i, "FT_OpenEX\n");
+                    writeToSpyFile(0, "FT_OpenEX\n");
                     *(long *)pHandle = i;
                     return FT_OK;
                 }
@@ -220,15 +291,23 @@ FT_STATUS FT_Purge(FT_HANDLE ftHandle, DWORD dwMask) {
 FT_STATUS FT_CreateDeviceInfoList(LPDWORD lpdwNumDevs)
 {
     *lpdwNumDevs = 0;
+    FT_STATUS status;
+
+    char json[10240];
+    FakeFtd2xx_readConfigFile(json);
+    status = FakeFtd2xx_parseConfigFile(json, fakeDeviceList, NUM_OF_FAKE_DEVICES);
+
+    if(status)
+        return 99;
     int i;
-    for(i=1; i <= NUM_OF_FAKE_DEVICES; i++) {
-        // TODO: move check for vid/pid elsewhere
-        if (vidPidFilter[0] == 123 && vidPidFilter[1] == 456 && i > 1)
+    for(i=0; i < NUM_OF_FAKE_DEVICES; i++) {
+        if(strlen(fakeDeviceList[i].serialNumber) == 0)
             break;
-        FakeDevice_Create();
-        *lpdwNumDevs += 1;
+        *lpdwNumDevs = i+1;
     }
-    printLog("Create DeviceInfoList requested, returning %d device(s).\n", *lpdwNumDevs);
+    fakeDeviceListCount = *lpdwNumDevs;
+
+    printLog("FT_CreateDeviceInfoList requested, returning %d device(s).\n", *lpdwNumDevs);
     return FT_OK;
 }
 
@@ -236,9 +315,7 @@ FT_STATUS FT_GetDeviceInfoList(FT_DEVICE_LIST_INFO_NODE *pDest, LPDWORD lpdwNumD
 {
     *lpdwNumDevs = 0;
     int i;
-    for(i=0; i < fakeDeviceCount; i++) {
-        if (vidPidFilter[0] == 123 && vidPidFilter[1] == 456 && i > 1)
-            break;
+    for(i=0; i < fakeDeviceListCount; i++) {
         long id = (fakeDeviceList[i].vendorId << 16) + fakeDeviceList[i].productId;
         FT_HANDLE ftHandle = malloc(sizeof(FT_HANDLE));
 
@@ -247,14 +324,16 @@ FT_STATUS FT_GetDeviceInfoList(FT_DEVICE_LIST_INFO_NODE *pDest, LPDWORD lpdwNumD
             0, //ULONG Type;
             id, //ULONG ID;
             fakeDeviceList[i].locationId, //DWORD LocId;
-            "my serial", //char SerialNumber[16];
-            "my description", //char Description[64];
+            "", //char SerialNumber[16];
+            "", //char Description[64];
             ftHandle
         };
+        strncpy(device.SerialNumber, fakeDeviceList[i].serialNumber, 16);
+        strncpy(device.Description, fakeDeviceList[i].description, 64);
         pDest[i] = device;
         *lpdwNumDevs += 1;
     }
-    printLog("Create GetDeviceInfoList requested, returning %d node(s)\n", *lpdwNumDevs);
+    printLog("FT_GetDeviceInfoList requested, returning %d node(s)\n", *lpdwNumDevs);
     return FT_OK;
 }
 

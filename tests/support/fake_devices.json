@@ -1,0 +1,18 @@
+[
+  {
+    "serialNumber": "FTDX00",
+    "description": "Description for fake device 0.",
+    "locationId": 0,
+    "vendorId": 123,
+    "productId": 456,
+    "spyFilePath": "/tmp/node-ftdi_spy0.log"
+  },
+  {
+    "serialNumber": "FTDX01",
+    "description": "Description for fake device 1.",
+    "locationId": 0,
+    "vendorId": 321,
+    "productId": 654,
+    "spyFilePath": "/tmp/node-ftdi_spy1.log"
+  }
+]

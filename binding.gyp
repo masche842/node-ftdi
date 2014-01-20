@@ -49,7 +49,8 @@
             ],
             'link_settings': {
               'libraries': [
-                './Release/fake_libftd2xx.a'
+                './Release/fake_libftd2xx.a',
+                '-ljansson'
               ]
             }
           }
@@ -61,6 +62,6 @@
         'type': 'static_library',
         'sources': [ 'mocks/FakeFtd2xx.c' ],
         'include_dirs+': [ 'lib' ]
-      },
+      }
   ]
 }
