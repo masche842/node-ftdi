@@ -2,17 +2,25 @@
   {
     "serialNumber": "FTDX00",
     "description": "Description for fake device 0.",
+    "message": "Fake Message",
     "locationId": 0,
     "vendorId": 123,
     "productId": 456,
-    "spyFilePath": "/tmp/node-ftdi_spy0.log"
+    "spyFilePath": "/tmp/node-ftdi_spy0.log",
+    "communication": {
+      "command": "response"
+    }
   },
   {
     "serialNumber": "FTDX01",
     "description": "Description for fake device 1.",
+    "message": "a fake message",
     "locationId": 0,
     "vendorId": 321,
     "productId": 654,
-    "spyFilePath": "/tmp/node-ftdi_spy1.log"
+    "spyFilePath": "/tmp/node-ftdi_spy1.log",
+    "communication": {
+      "command": "response"
+    }
   }
 ]

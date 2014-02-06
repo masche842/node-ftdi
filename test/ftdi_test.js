@@ -104,10 +104,9 @@ describe("ftdi", function(){
           expect(err).to.equal('FT_DEVICE_NOT_FOUND');
           done();
         });
-
       });
-
     });
+
     describe("incoming data", function(){
 
       afterEach(function(){
@@ -115,14 +114,12 @@ describe("ftdi", function(){
       });
 
       it("emits a 'data' event", function(done){
-        doneCalled = false;
         device = new ftdi.FtdiDevice(0);
-        device.open({}, function(){
-          device.on('data', function(data){
-            expect(data.toString('utf8')).to.equal('Fake Message');
-            if(!doneCalled){done();doneCalled=true;}
+        device.on('data', function(data){
+          expect(data.toString('utf8')).to.equal('Fake Message');
+          done();
           });
-        });
+        device.open({});
       });
     });
 
@@ -145,6 +142,24 @@ describe("ftdi", function(){
     });
   });
 
+
+  describe("FakeDeviceFuntion", function(){
+    it("receives message only once", function(done){
+        // Check for second device as that failed!
+        device = new ftdi.FtdiDevice(1);
+        messages = [];
+        device.on('data', function(data){
+          messages.push(data.toString('utf8'));
+        });
+        device.open({}, function(){
+          setTimeout(function(){
+            device.close();
+            expect(messages.length).to.eql(1);
+            done();
+          }, 300);
+        });
+    });
+  });
 });
 
 readSpyFile = function(deviceIndex){

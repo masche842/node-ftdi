@@ -1,26 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <sys/stat.h>
 #include "memory.h"
-#include "../lib/jansson.h"
+#include "utils/jansson-2.5/src/jansson.h"
 #include "../lib/ftd2xx.h"
 #include "FakeFtd2xx.h"
 
 #define SPY_FILE_PATH "/tmp/ftd2xx.spy"
 #define NUM_OF_FAKE_DEVICES 4
 #define DEFAULT_CONFIG_PATH "tests/support/fake_devices.json"
-
-static long usb_ids[2][2] =
-    {
-        {0x0403,0x6015},
-        {0x0403,0x6015}
-    };
+#define DEFAULT_CONFIG_PATH_ALT "test/support/fake_devices.json"
 
 static long vidPidFilter[2] = {0,0};
 
 static FakeDevice fakeDeviceList[NUM_OF_FAKE_DEVICES];
 static int fakeDeviceListCount = 0;
-static int fakeDeviceCount = 0;
 char FakeFtd2xx_configFilePath[255];
 
 int FakeFtd2xx_parseConfigFile(char * text, FakeDevice * fakeDevices, int maxDevices)
@@ -36,10 +31,13 @@ int FakeFtd2xx_parseConfigFile(char * text, FakeDevice * fakeDevices, int maxDev
         json_decref(root);
         return 1;
     }
+
+    fakeDeviceListCount = 0;
+
     for(i = 0; i < json_array_size(root) && i < maxDevices; i++)
     {
-        json_t *data, *serialNumber, *description, *vendorId,
-               *productId, *locationId, *spyFilePath;
+        json_t *data, *serialNumber, *description, *vendorId, *productId,
+               *locationId, *spyFilePath, *message, *communication;
 
         data = json_array_get(root, i);
         if(!json_is_object(data))
@@ -56,6 +54,11 @@ int FakeFtd2xx_parseConfigFile(char * text, FakeDevice * fakeDevices, int maxDev
         description = json_object_get(data, "description");
         if(!json_is_string(description)) {
             fprintf(stderr, "error: can not read description from %d\n", i + 1);
+            return 1;
+        }
+        message = json_object_get(data, "message");
+        if(!json_is_string(message)) {
+            fprintf(stderr, "error: can not read message from %d\n", i + 1);
             return 1;
         }
         vendorId = json_object_get(data, "vendorId");
@@ -78,16 +81,37 @@ int FakeFtd2xx_parseConfigFile(char * text, FakeDevice * fakeDevices, int maxDev
             fprintf(stderr, "error: can not read spyFilePath from %d\n", i + 1);
             return 1;
         }
+        communication = json_object_get(data, "communication");
+        if(!json_is_object(communication)) {
+            fprintf(stderr, "error: can not read communication from %d\n", i + 1);
+            return 1;
+        }
+
         strcpy(fakeDevices[i].serialNumber, json_string_value(serialNumber));
         strcpy(fakeDevices[i].description, json_string_value(description));
+        strcpy(fakeDevices[i].message, json_string_value(message));
 
         fakeDevices[i].vendorId = json_number_value(vendorId);
         fakeDevices[i].productId = json_number_value(productId);
         fakeDevices[i].locationId = json_number_value(locationId);
+        fakeDevices[i].communication = communication;
 
         strcpy(fakeDevices[i].spyFilePath, json_string_value(spyFilePath));
+
+        fakeDevices[i].messageCounter = 0;
+
+        fakeDeviceListCount += 1;
     }
     return 0;
+}
+
+const char * FakeFtd2xx_responseFromCommand(char * command, int deviceIndex)
+{
+    json_t * response;
+    response = json_object_get(fakeDeviceList[deviceIndex].communication, command);
+    if(!json_is_string(response))
+        return 0;
+    return json_string_value(response);
 }
 
 int FakeFtd2xx_readConfigFile(char * result)
@@ -95,8 +119,17 @@ int FakeFtd2xx_readConfigFile(char * result)
     FILE *fp;
     int fileSize;
 
-    if(strlen(FakeFtd2xx_configFilePath) <= 0)
-        FakeFtd2xx_setConfigFilePath(DEFAULT_CONFIG_PATH);
+    if(strlen(FakeFtd2xx_configFilePath) <= 0) {
+        int status = 1;
+        status = FakeFtd2xx_setConfigFilePath(DEFAULT_CONFIG_PATH);
+        if (0 != status) {
+            status = FakeFtd2xx_setConfigFilePath(DEFAULT_CONFIG_PATH_ALT);
+            if (0 != status) {
+                return status;
+            }
+        }
+    }
+    printLog("Fake devices config file: %s\n", FakeFtd2xx_configFilePath);
     fp = fopen(FakeFtd2xx_configFilePath, "r+");
     if(!fp)
         return 1;
@@ -114,16 +147,22 @@ int FakeFtd2xx_createDevices(FakeDevice * devices, int numberOfDevices)
 {
     int status = 0;
     char rawJson[24000];
-
     status |= FakeFtd2xx_readConfigFile(rawJson);
     status |= FakeFtd2xx_parseConfigFile(rawJson, devices, numberOfDevices);
 
     return status;
 }
 
-void FakeFtd2xx_setConfigFilePath(const char * path)
+int FakeFtd2xx_setConfigFilePath(const char * path)
 {
+    struct stat buffer;
     strncpy(FakeFtd2xx_configFilePath, path, 255);
+    return stat(FakeFtd2xx_configFilePath, &buffer);
+}
+
+int FakeFtd2xx_numberOfDevices()
+{
+    return fakeDeviceListCount;
 }
 
 void FakeFtd2xx_destroy()
@@ -153,16 +192,12 @@ void printLog(char *fmt, ...)
 
 static void scheduleResponse(char * buffer, int deviceIndex)
 {
-
-    char *lut[1][2] = {
-        { "\t\r", "\32\32\32\n\r." }
-    };
-
-    int i;
-    for(i=0; i<1; i++) {
-        if (strcmp(lut[i][0], buffer) == 0)
-            printLog("WE HAVE A MATCH HERE %d,\n", strlen(lut[i][1]));
-            strncpy(fakeDeviceList[deviceIndex].message, lut[i][1], strlen(lut[i][1]));
+    const char * response = FakeFtd2xx_responseFromCommand(buffer, deviceIndex);
+    if(response) {
+        strncpy(fakeDeviceList[deviceIndex].message, response, 256);
+        fakeDeviceList[deviceIndex].messageCounter = 0;
+    } else {
+        printLog("Command not found in list for %s\n", fakeDeviceList[deviceIndex].serialNumber);
     }
 }
 
@@ -234,18 +269,23 @@ FT_STATUS FT_GetQueueStatus(FT_HANDLE ftHandle, LPDWORD lpRxBytes)
 {
     int deviceIndex = (int)(long *)ftHandle;
     *lpRxBytes = strlen(fakeDeviceList[deviceIndex].message) - fakeDeviceList[deviceIndex].messageCounter;
+    // Uncomment for infinetely repeated message
     //if (*lpRxBytes == 0)
     //    fakeDeviceList[deviceIndex].messageCounter = 0;
-    printLog("Que Status requested for %d (position %d).\n",deviceIndex ,fakeDeviceList[deviceIndex].messageCounter);
+    //printLog("Queue Status requested for %d (position %d, length %d).\n",
+    //    deviceIndex, fakeDeviceList[deviceIndex].messageCounter, fakeDeviceList[deviceIndex].messageCounter);
+    sleep(2);
     return FT_OK;
 }
 
 FT_STATUS FT_Read(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToRead, LPDWORD lpBytesReturned)
 {
+    int deviceIndex = (int)(long *)ftHandle;
     printLog("%d Bytes requested to read. \n", dwBytesToRead);
-    memcpy(lpBuffer, fakeDeviceList[0].message + fakeDeviceList[0].messageCounter, dwBytesToRead);
-    *lpBytesReturned = dwBytesToRead;
-    fakeDeviceList[0].messageCounter += dwBytesToRead;
+    memcpy(lpBuffer, fakeDeviceList[deviceIndex].message + fakeDeviceList[deviceIndex].messageCounter, dwBytesToRead);
+    *((char *)lpBuffer+dwBytesToRead) = '\0';
+    *lpBytesReturned = strlen((char *)lpBuffer);
+    fakeDeviceList[deviceIndex].messageCounter += dwBytesToRead;
     return FT_OK;
 }
 
@@ -260,7 +300,7 @@ FT_STATUS FT_Write(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToWrite, LP
     char escapedBuffer[dwBytesToWrite*2];
     escapeEscapeSequences(trimmedBuffer, escapedBuffer);
 
-    printLog("length of string: %d\n", strlen(escapedBuffer));
+    printLog("length of string: %d of %d\n", strlen(escapedBuffer), dwBytesToWrite);
 
     char output[strlen(outputFmt)+strlen(escapedBuffer)];
     sprintf(output, outputFmt, escapedBuffer);
@@ -275,7 +315,7 @@ FT_STATUS FT_Write(FT_HANDLE ftHandle, LPVOID lpBuffer, DWORD dwBytesToWrite, LP
 
 FT_STATUS FT_Close(FT_HANDLE ftHandle) {
     printLog("Close requested for %d.\n", (long *)ftHandle);
-    if((int)(long *)ftHandle > fakeDeviceCount-1) {
+    if((int)(long *)ftHandle > fakeDeviceListCount-1) {
         return FT_INVALID_HANDLE;
     } else {
         writeToSpyFile((int)(long *)ftHandle, "FT_Close\n");
@@ -395,9 +435,10 @@ FT_STATUS FT_SetVIDPID(DWORD dwVID, DWORD dwPID)
 void escapeEscapeSequences(char *string, char *result)
 {
     char * p;
+    *result = '\0';
     for (p = string; *p; p++) {
         switch(*p) {
-            case '\n':
+           case '\n':
                 *result++ = '\\';
                 *result = 'n';
                 break;
